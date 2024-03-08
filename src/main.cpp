@@ -4,7 +4,7 @@
 #include <MIDI.h>
 #include <FastLED.h>
 
-#define NUM_LEDS 88
+#define NUM_LEDS 89
 #define DATA_PIN 0
 #define CLOCK_PIN 3
 #define LED 13 // LED pin on Arduino Uno
@@ -15,14 +15,12 @@ CRGB leds[NUM_LEDS];
 
 void noteOn(byte channel, byte note, byte velocity)
 {
-  Serial.printf("Note On: %d - %d\n", note, velocity);
-  leds[note] = CRGB(velocity, 0, 0);
+  notes[note] = velocity;
 }
 
 void noteOff(byte channel, byte note, byte velocity)
 {
-  Serial.printf("Note Off: %d\n", note);
-  leds[note] = 0;
+  notes[note] = 0;
 }
 
 void setup()
@@ -36,7 +34,9 @@ void setup()
   MIDI.begin();
 }
 
-long lastTime = 0;
+long lastTime = 0, rt = 0;
+
+char keyString[88] = "";
 void loop()
 {
   MIDI.read();
@@ -44,13 +44,22 @@ void loop()
   // Set Frame
   long currentTime = millis();
   long dt = currentTime - lastTime;
+  rt += dt;
+  if(rt > 100) {
+    for(int i = 0; i < 88; i++) {
+      keyString[i] = notes[i]? '#' : '-';
+    }
+    Serial.println(keyString);
+    rt-=100;
+  }
   lastTime = currentTime;
   uint8_t cycle = (256 * (currentTime % 4000)) / 4000;
 
   // Do LEDs
-  for(int i = 0; i < 10; i++) {
-    leds[i] = CHSV(cycle, 255, 255);
+  for(int i = 0; i < 88; i++) {
+    leds[i] = CHSV(cycle, 255, notes[i]);
   }
+  leds[88] = CHSV(cycle, 255, 255);
 
   // Show Frame
   FastLED.show();
