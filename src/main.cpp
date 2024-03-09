@@ -1,73 +1,66 @@
-/// @file    Blink.ino
-/// @brief   Blink the first LED of an LED strip
-/// @example Blink.ino
-
+#include <Arduino.h>
+// #include <SPI.h>
+// #include <EEPROM.h>
+#include <MIDI.h>
 #include <FastLED.h>
 
-// How many leds in your strip?
-#define NUM_LEDS 1
-
-// For led chips like WS2812, which have a data line, ground, and power, you just
-// need to define DATA_PIN.  For led chipsets that are SPI based (four wires - data, clock,
-// ground, and power), like the LPD8806 define both DATA_PIN and CLOCK_PIN
-// Clock pin only needed for SPI based chipsets when not using hardware SPI
+#define NUM_LEDS 89
 #define DATA_PIN 0
-// #define CLOCK_PIN 13
+#define CLOCK_PIN 3
+#define LED 13 // LED pin on Arduino Uno
 
-// Define the array of leds
+MIDI_CREATE_INSTANCE(HardwareSerial, Serial3, MIDI);
+byte notes[NUM_LEDS];
 CRGB leds[NUM_LEDS];
 
-void setup() { 
-    // Uncomment/edit one of the following lines for your leds arrangement.
-    // ## Clockless types ##
-    // FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);  // GRB ordering is assumed
-    // FastLED.addLeds<SM16703, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<TM1829, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<TM1812, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<TM1809, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<TM1804, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<TM1803, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<UCS1903, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<UCS1903B, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<UCS1904, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<UCS2903, DATA_PIN, RGB>(leds, NUM_LEDS);
-     FastLED.addLeds<WS2812, DATA_PIN, RGB>(leds, NUM_LEDS);  // GRB ordering is typical
-    // FastLED.addLeds<WS2852, DATA_PIN, RGB>(leds, NUM_LEDS);  // GRB ordering is typical
-    // FastLED.addLeds<WS2812B, DATA_PIN, RGB>(leds, NUM_LEDS);  // GRB ordering is typical
-    // FastLED.addLeds<GS1903, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<SK6812, DATA_PIN, RGB>(leds, NUM_LEDS);  // GRB ordering is typical
-    // FastLED.addLeds<SK6822, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<APA106, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<PL9823, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<SK6822, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<WS2811, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<WS2813, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<APA104, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<WS2811_400, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<GE8822, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<GW6205, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<GW6205_400, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<LPD1886, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<LPD1886_8BIT, DATA_PIN, RGB>(leds, NUM_LEDS);
-    // ## Clocked (SPI) types ##
-    // FastLED.addLeds<LPD6803, DATA_PIN, CLOCK_PIN, RGB>(leds, NUM_LEDS);  // GRB ordering is typical
-    // FastLED.addLeds<LPD8806, DATA_PIN, CLOCK_PIN, RGB>(leds, NUM_LEDS);  // GRB ordering is typical
-    // FastLED.addLeds<WS2801, DATA_PIN, CLOCK_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<WS2803, DATA_PIN, CLOCK_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<SM16716, DATA_PIN, CLOCK_PIN, RGB>(leds, NUM_LEDS);
-    // FastLED.addLeds<P9813, DATA_PIN, CLOCK_PIN, RGB>(leds, NUM_LEDS);  // BGR ordering is typical
-    // FastLED.addLeds<DOTSTAR, DATA_PIN, CLOCK_PIN, RGB>(leds, NUM_LEDS);  // BGR ordering is typical
-    // FastLED.addLeds<APA102, DATA_PIN, CLOCK_PIN, RGB>(leds, NUM_LEDS);  // BGR ordering is typical
-    // FastLED.addLeds<SK9822, DATA_PIN, CLOCK_PIN, RGB>(leds, NUM_LEDS);  // BGR ordering is typical
+void noteOn(byte channel, byte note, byte velocity)
+{
+  notes[note] = velocity;
 }
 
-void loop() { 
-  // Turn the LED on, then pause
-  leds[0] = CRGB::Red;
+void noteOff(byte channel, byte note, byte velocity)
+{
+  notes[note] = 0;
+}
+
+void setup()
+{
+  pinMode(LED, OUTPUT);
+  FastLED.addLeds<WS2812, DATA_PIN, RGB>(leds, NUM_LEDS);
+
+  MIDI.turnThruOff();
+  MIDI.setHandleNoteOn(noteOn);
+  MIDI.setHandleNoteOff(noteOff);
+  MIDI.begin();
+}
+
+long lastTime = 0, rt = 0;
+
+char keyString[88] = "";
+void loop()
+{
+  MIDI.read();
+
+  // Set Frame
+  long currentTime = millis();
+  long dt = currentTime - lastTime;
+  rt += dt;
+  if(rt > 100) {
+    for(int i = 0; i < 88; i++) {
+      keyString[i] = notes[i]? '#' : '-';
+    }
+    Serial.println(keyString);
+    rt-=100;
+  }
+  lastTime = currentTime;
+  uint8_t cycle = (256 * (currentTime % 4000)) / 4000;
+
+  // Do LEDs
+  for(int i = 0; i < 88; i++) {
+    leds[i] = CHSV(cycle, 255, notes[i]);
+  }
+  leds[88] = CHSV(cycle, 255, 255);
+
+  // Show Frame
   FastLED.show();
-  delay(500);
-  // Now turn the LED off, then pause
-  leds[0] = CRGB::Black;
-  FastLED.show();
-  delay(500);
 }
