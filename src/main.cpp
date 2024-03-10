@@ -1,32 +1,37 @@
 #include <Arduino.h>
-// #include <SPI.h>
-// #include <EEPROM.h>
+#include <SPI.h>
+#include <EEPROM.h>
 #include <MIDI.h>
+#include <WS2812Serial.h>
+#define USE_WS2812SERIAL
 #include <FastLED.h>
 
-#define NUM_LEDS 89
-#define DATA_PIN 0
+#define NUM_LEDS 120
+#define NUM_KEYS 88
+#define DATA_PIN 8
 #define CLOCK_PIN 3
 #define LED 13 // LED pin on Arduino Uno
+#define FRAME_RATE 60
+#define MIDI_OFFSET 21
 
 MIDI_CREATE_INSTANCE(HardwareSerial, Serial3, MIDI);
-byte notes[NUM_LEDS];
+int notes[NUM_KEYS];
 CRGB leds[NUM_LEDS];
 
 void noteOn(byte channel, byte note, byte velocity)
 {
-  notes[note] = velocity;
+  notes[note - MIDI_OFFSET] = velocity;
 }
 
 void noteOff(byte channel, byte note, byte velocity)
 {
-  notes[note] = 0;
+  notes[note - MIDI_OFFSET] = 0;
 }
 
 void setup()
 {
   pinMode(LED, OUTPUT);
-  FastLED.addLeds<WS2812, DATA_PIN, RGB>(leds, NUM_LEDS);
+  LEDS.addLeds<WS2812, DATA_PIN, RGB>(leds, NUM_LEDS);
 
   MIDI.turnThruOff();
   MIDI.setHandleNoteOn(noteOn);
@@ -34,9 +39,29 @@ void setup()
   MIDI.begin();
 }
 
-long lastTime = 0, rt = 0;
+double mod1(double x){
+  double r = fmod(x, 1);
+  if(r < 0) {
+    r += 1;
+  }
+  return r;
+}
 
-char keyString[88] = "";
+uint8_t fToU8(double x){
+  return (uint8_t)(x * 255);
+}
+double u8ToF(uint8_t x){
+  return (double)x / 255;
+}
+
+const int fade_rate = 250;
+const double entropy = 0.01;
+
+void fadeall() { for(int i = 0; i < NUM_LEDS; i++) { leds[i].nscale8(fade_rate); } }
+
+long lastTime = 0, rt = 0, ft = 0;
+const int frame_delay = 1000 / FRAME_RATE;
+double intensity[NUM_LEDS], d_intensity[NUM_LEDS];
 void loop()
 {
   MIDI.read();
@@ -44,23 +69,42 @@ void loop()
   // Set Frame
   long currentTime = millis();
   long dt = currentTime - lastTime;
-  rt += dt;
-  if(rt > 100) {
-    for(int i = 0; i < 88; i++) {
-      keyString[i] = notes[i]? '#' : '-';
-    }
-    Serial.println(keyString);
-    rt-=100;
-  }
   lastTime = currentTime;
-  uint8_t cycle = (256 * (currentTime % 4000)) / 4000;
+  ft += dt;
 
-  // Do LEDs
-  for(int i = 0; i < 88; i++) {
-    leds[i] = CHSV(cycle, 255, notes[i]);
+  if(ft > frame_delay) {
+    ft -= frame_delay;
+
+    fadeall();
+
+    uint8_t t = (256 * (currentTime % 4000)) / 4000;
+
+    // Do LEDs
+    for(int i = 0; i < 88; i++) {
+      if(notes[i]){
+        intensity[i] = u8ToF(notes[i]);
+      }
+    }
+
+    // Entropy
+    for(int i = 0; i < (NUM_LEDS-1); i++) {
+      double d = intensity[i] - intensity[i+1];
+      if(d > 0) {
+        d_intensity[i+1] = d*entropy;
+      } else {
+        d_intensity[i] = -d*entropy;
+      }
+    }
+    for(int i = 0; i < NUM_LEDS; i++) {
+      intensity[i] += d_intensity[i];
+      leds[i] = CHSV(t, 255, fToU8(intensity[i]));
+    }
+
+
+    // Last LED to verify LEDs are working
+    leds[NUM_KEYS] = CHSV(t, 255, 255);
+
+    // Show Frame
+    FastLED.show();
   }
-  leds[88] = CHSV(cycle, 255, 255);
-
-  // Show Frame
-  FastLED.show();
 }
