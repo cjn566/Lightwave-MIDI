@@ -155,6 +155,9 @@ double closestPath(double a, double b)
 void drawSettings()
 {
   display.clear();
+
+  display.drawString(20, 0, outputSelf ? "Self" : "PB");
+
   display.drawString(64, 0, "T: " + String(tenacity_val));
   display.drawProgressBar(0, 14, 128, 4, (tenacity_val * 100) / 31);
   display.drawString(64, 20, "E: " + String(entropy_val));
@@ -220,10 +223,15 @@ void loop()
       if (displayTimeRemaining > 0)
       {
         displayTimeRemaining = 0;
+
+        display.clear();
+        display.drawString(64, 20, "OFF");
+        display.display();
       }
       else
       {
         displayTimeRemaining = ON_TIME;
+        drawSettings();
       }
     }
   }
@@ -260,13 +268,14 @@ void loop()
         if (key < 100)
         {
           // Note recieved
-          note(key - 1, value == 255 ? 0 : value);
+          note(NUM_KEYS - key, value == 255 ? 0 : value);
 
           lastRXtime = currentTime;
           if (!outputSelf)
           {
             outputSelf = true;
             digitalWrite(P_SELECT, outputSelf);
+            drawSettings();
           }
         }
         else if (key == 200)
@@ -452,6 +461,7 @@ void loop()
     {
       outputSelf = false;
       digitalWrite(P_SELECT, outputSelf);
+      drawSettings();
     }
   }
 }
