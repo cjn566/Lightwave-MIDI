@@ -5,6 +5,8 @@
 #define DEBUG
 
 #define NUM_KEYS 88
+#define NUM_LEDS 90
+#define KEY_LED_OFFSET 1
 #define P_SELECT 7
 #define DATA_PIN 47
 #define CLOCK_PIN 48
@@ -26,7 +28,7 @@ const byte syncword = 0x69;
 
 bool noteFirstOn[NUM_KEYS] = {false}, outputSelf = false;
 int notes[NUM_KEYS] = {0};
-double activeHue[NUM_KEYS] = {0.0};
+double activeHue[NUM_LEDS] = {0.0};
 long noteOnTime[NUM_KEYS] = {0};
 
 volatile bool rxFlag = false;
@@ -37,13 +39,15 @@ byte key, value;
 int leftSide = 0, rightSide;
 bool didLeftEnd = false;
 
+int ledIdx, noteIdx;
+
 bool test = false, test2 = false;
 
 long lastTime = 0, rt = 0, ft = 0, lastRXtime;
 const int frame_delay = 1000 / FRAME_RATE;
 
-CRGB leds[NUM_KEYS];
-double intensity[NUM_KEYS], d_intensity[NUM_KEYS], hue[NUM_KEYS] = {-1.0}, d_hue[NUM_KEYS], t = 0.0, targetHue[NUM_KEYS];
+CRGB leds[NUM_LEDS];
+double intensity[NUM_LEDS], d_intensity[NUM_LEDS], hue[NUM_LEDS] = {-1.0}, d_hue[NUM_LEDS], t = 0.0, targetHue[NUM_LEDS];
 
 uint16_t tenacity_val, entropy_val, chroma_val;
 double tenacity_f, entropy_f, chrome_f;
@@ -93,13 +97,6 @@ void note(byte note, byte velocity)
   {
     notes[note] = 0;
   }
-
-  // Serial.printf("\nkey %i\t%i", note, velocity);
-
-  // if (velocity)
-  // {
-  //   Serial.printf("Note: %i\tVelocity: %i\n", note, notes[note]);
-  // }
 }
 
 void rx()
@@ -169,7 +166,7 @@ void drawSettings()
 
 void setup()
 {
-  LEDS.addLeds<SK9822, DATA_PIN, CLOCK_PIN>(leds, NUM_KEYS);
+  LEDS.addLeds<SK9822, DATA_PIN, CLOCK_PIN>(leds, NUM_LEDS);
   pinMode(P_SELECT, OUTPUT);
   digitalWrite(P_SELECT, outputSelf);
 
@@ -329,57 +326,45 @@ void loop()
       t = fmod((double)currentTime / cycle_ms, 1.0);
 
       didLeftEnd = false;
-      for (int i = 0; i < NUM_KEYS; i++)
+      for (ledIdx = 0; ledIdx < NUM_LEDS; ledIdx++)
       {
+        noteIdx = ledIdx - KEY_LED_OFFSET;
         // Fade all or turn off
-        if (intensity[i] > 0)
+        if (intensity[ledIdx] > 0)
         {
-          if (intensity[i] > tenacity_f && intensity[i] > 0.01)
+          if (intensity[ledIdx] > tenacity_f && intensity[ledIdx] > 0.01)
           {
-            if (i == 3)
-            {
-              Serial.printf("\n%.3f - %.3f = ", intensity[i], tenacity_f);
-            }
-            intensity[i] -= tenacity_f;
-            if (i == 3)
-            {
-              Serial.printf("%.3f", intensity[i]);
-            }
+            intensity[ledIdx] -= tenacity_f;
           }
           else
           {
-            intensity[i] = 0;
-            hue[i] = -1.0;
-
-            if (i == 3)
-            {
-              Serial.printf("\n-/- %.3f", intensity[i]);
-            }
+            intensity[ledIdx] = 0;
+            hue[ledIdx] = -1.0;
           }
         }
 
         // Process each "on" note
-        if (notes[i] > 0)
+        if (noteIdx >= 0 && noteIdx > NUM_KEYS && notes[noteIdx] > 0)
         {
           // Check if note has been stuck on
-          if (currentTime - noteOnTime[i] >= STUCK_NOTE_TIMEOUT)
+          if (currentTime - noteOnTime[noteIdx] >= STUCK_NOTE_TIMEOUT)
           {
-            note(i, 0);
+            note(noteIdx, 0);
           }
           else
           {
             // Set it's hue if it was just pressed
-            if (noteFirstOn[i])
+            if (noteFirstOn[noteIdx])
             {
-              activeHue[i] = fmod(t + (float)random(0, (long)(chrome_f * 1000)) / 1000, 1.0);
+              activeHue[ledIdx] = fmod(t + (float)random(0, (long)(chrome_f * 1000)) / 1000, 1.0);
             }
-            hue[i] = activeHue[i];
+            hue[ledIdx] = activeHue[ledIdx];
 
             // Restore intensity for note still held
-            intensity[i] = u8ToF(notes[i]);
+            intensity[ledIdx] = u8ToF(notes[noteIdx]);
 
-            rightSide = i;
-            targetHue[i] = hue[i];
+            rightSide = ledIdx;
+            targetHue[ledIdx] = hue[ledIdx];
             double hueIncrement = 0.0;
 
             if (!didLeftEnd)
@@ -403,56 +388,49 @@ void loop()
         }
 
         // Process entropy
-        if (i > 0)
+        if (ledIdx > 0)
         {
-          double d = (intensity[i] - intensity[i - 1]) * entropy_f;
-          d_intensity[i - 1] += d;
-          d_intensity[i] -= d;
+          double d = (intensity[ledIdx] - intensity[ledIdx - 1]) * entropy_f;
+          d_intensity[ledIdx - 1] += d;
+          d_intensity[ledIdx] -= d;
         }
       }
       // At least one key pressed, so fill in the right side
       if (didLeftEnd)
       {
-        for (int j = leftSide + 1; j < NUM_KEYS; j++)
+        for (int j = leftSide + 1; j < NUM_LEDS; j++)
         {
           targetHue[j] = hue[leftSide];
         }
       }
 
-      for (int i = 0; i < NUM_KEYS; i++)
-      {
-        intensity[i] += d_intensity[i];
-        d_intensity[i] = 0.0;
+      // Apply changes
+      for (ledIdx = 0; ledIdx < NUM_LEDS; ledIdx++)
+      {        
+        noteIdx = ledIdx - KEY_LED_OFFSET;
+        intensity[ledIdx] += d_intensity[ledIdx];
+        d_intensity[ledIdx] = 0.0;
 
-        if (intensity[i])
+        if (intensity[ledIdx])
         {
-          if (hue[i] < 0)
+          if (hue[ledIdx] < 0)
           {
-            hue[i] = targetHue[i];
+            hue[ledIdx] = targetHue[ledIdx];
           }
           else
           {
-            hue[i] += (targetHue[i] - hue[i]) * 0.3;
+            hue[ledIdx] += (targetHue[ledIdx] - hue[ledIdx]) * 0.3;
           }
         }
 
-        // Serial.printf("%.2f,", targetHue[i]);
-
-        // hue[i] = mod1(hue[i] + d_hue[i]);
-        // d_hue[i] = 0.0;
-
         uint8_t s = 255;
-        if (noteFirstOn[i])
+        if (noteFirstOn[noteIdx])
         {
           s = 0;
-          noteFirstOn[i] = false;
+          noteFirstOn[noteIdx] = false;
         }
 
-        if (i == 3 && intensity[i] > 0)
-        {
-          Serial.printf("\n%.3f\t%i", intensity[i], fToU8(intensity[i]));
-        }
-        leds[i] = CHSV(fToU8(hue[i]), s, fToU8(intensity[i]));
+        leds[ledIdx] = CHSV(fToU8(hue[ledIdx]), s, fToU8(intensity[ledIdx]));
       }
       FastLED.show();
     }
